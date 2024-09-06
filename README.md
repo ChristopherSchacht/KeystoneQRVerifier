@@ -9,6 +9,8 @@ Every new QR code is being logged in a log-field that can be exported or cleared
 
 - The "keystonQRVerify.py" contains the currently working "translation" logic that translates these not human readable QR texts to Cardano transactions. Either a normal UTXO transaction or a Signnatur-Request message.
 
+- cardano_qr_code.txt contains a few samples with which the decoding-logic can be tested. So does the sample_qr_codes.txt, which is currently decoded by the "keystonQRVerify.py". So for rapid testing just change the content of the sample_qr_codes.txt.
+
 ## What is missing and should be done next (_Backlog_):
 - The "Keystone-QR-Codes.py" should use this decoding logic of "keystonQRVerify.py". These two files have not been merged, yet.
 - Further the Decoding logic should reliably identify everything that it can't understand or that is "added" to the QR code and display that with a warning. Thus informing the user about a possible side-commmunication that might be going on.
