@@ -1,19 +1,20 @@
 # KeystoneQRVerifier - Cardano
 
-## Goal:
-Creating a python application with which everyone can easily read and verify the QR codes that are being exchanged between the airgapped Keystone 3 Pro hardware wallet and the corresponding software wallet.
+<img width="1436" alt="image" src="https://github.com/user-attachments/assets/db039f11-cd9d-4021-8dbb-736e69c0d41e">
 
-## current development stage
-- The "Keystone-QR-Codes.py" and (previous) "Check-QR-Codes.py" create a working python GUI that lets you get either the camera or the desktop display-feed and checks for QR codes.
+
+## Description:
+A python application with which everyone can easily read and verify the QR codes that are being exchanged between the airgapped Keystone 3 Pro hardware wallet and the corresponding software wallet.
+
+## current version
+- The "Keystone-QR-Codes.py" creates a working python GUI that display the camera and desktop feed and checks for QR codes.
 Every new QR code is being logged in a log-field that can be exported or cleared.
-
-- The "keystonQRVerify.py" contains the currently working "translation" logic that translates these not human readable QR texts to Cardano transactions. Either a normal UTXO transaction or a Signnatur-Request message.
-
-- cardano_qr_code.txt contains a few samples with which the decoding-logic can be tested. So does the sample_qr_codes.txt, which is currently decoded by the "keystonQRVerify.py". So for rapid testing just change the content of the sample_qr_codes.txt.
+- The QR Code is being translated into human readable Cardano transaction / signing information.
 
 ## What is missing and should be done next (_Backlog_):
-- The "Keystone-QR-Codes.py" should use this decoding logic of "keystonQRVerify.py". These two files have not been merged, yet.
-- Further the Decoding logic should reliably identify everything that it can't understand or that is "added" to the QR code and display that with a warning. Thus informing the user about a possible side-commmunication that might be going on.
+- The Decoding logic should reliably identify everything of the QR Code that it can't understand or that is "added" to the QR code and display that with a warning. Thus informing the user about a possible side-commmunication that might be going on.
+- It has only been tested on the most common Cardano transactions. More exotic ones and even other chains could be added.
+- It has only been tested so far on MacOS 14.6.1 with M2 processor. 
 
 
 
