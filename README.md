@@ -40,7 +40,7 @@ pip3 install opencv-python pyzbar Pillow cbor2 pycardano
 
 - On Ubuntu this can be installed by doing:
 sudo apt install protobuf-compiler
-- n macOS this can be installed by doing:
+- On macOS this can be installed by doing:
 brew install protobuf
 
 2. Google Python API client for protobufs. Assuming python3, this can be installed by doing:
