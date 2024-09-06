@@ -393,11 +393,31 @@ class ModernQRScanner:
                 return self.format_transaction_details(decoded_data['data'])
             elif ur.type == 'cardano-sign-data-request':
                 return self.format_sign_data_details(decoded_data['data'])
+            elif ur.type == 'cardano-sign-data-signature':
+                return self.format_signature_details(decoded_data['data'])
             else:
                 return f"Unsupported Cardano request type: {ur.type}"
         except Exception as e:
             logging.error(f"Error decoding QR data: {str(e)}")
             return f"Error decoding QR data: {str(e)}"
+        
+    def format_signature_details(self, data: Dict[int, Any]) -> str:
+        result = []
+        result.append(f"Request ID: {data.get(1, 'N/A')}")
+        
+        signature = data.get(2, b'')
+        result.append(f"\nSignature: {signature.hex()}")
+        
+        key_path = data.get(3, b'')
+        result.append(f"\nPublic Key: {key_path.hex()}")
+        
+        witness = data.get(4, b'')
+        if witness:
+            result.append(f"\nWitness: {witness.hex()}")
+        else:
+            result.append("\nWitness: None")
+        
+        return "\n".join(result)
 
     def format_transaction_details(self, data: Dict[int, Any]) -> str:
         result = []
