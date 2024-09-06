@@ -16,7 +16,32 @@ Every new QR code is being logged in a log-field that can be exported or cleared
 - It has only been tested on the most common Cardano transactions. More exotic ones and even other chains could be added.
 - It has only been tested so far on MacOS 14.6.1 with M2 processor. 
 
+## RUN
+- install the necessary libs:
+*Windows:*
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install python zbar
+pip3 install opencv-python pyzbar Pillow cbor2 pycardano
+
+*MAC:*
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install python zbar
+pip3 install opencv-python pyzbar Pillow cbor2 pycardano
+
+- for how to make the project see : https://github.com/KeystoneHQ/KeystoneQRVerifier :
+"To run this the following pre-requisites must be fulfilled:
+
+Google Protobuf compiler.
+
+On Ubuntu this can be installed by doing:
+sudo apt install protobuf-compiler
+On macOS this can be installed by doing:
+ brew install protobuf
+Google Python API client for protobufs. Assuming python3, this can be installed by doing:
+pip3 install --upgrade google-api-python-client
+
+Run (and install if necessary) make to build the python modules needed for Google proto3 support."
 
 
-**Attribution:**
+## Attribution:
 This repo is based on the KeystoneQRVerifier which itself is based on the work of @fnord123, as the Keystone hardware wallet is simply relaunched from the Cobo Vault branding so both the code base and infrastructure are almost the same
