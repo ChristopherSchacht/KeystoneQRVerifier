@@ -7,7 +7,7 @@
 A python application with which everyone can easily read and verify the QR codes that are being exchanged between the airgapped Keystone 3 Pro hardware wallet and the corresponding software wallet.
 
 ## current version
-- The "Keystone-QR-Codes.py" creates a working python GUI that display the camera and desktop feed and checks for QR codes.
+- The "Keystone-QR-Codes.py" creates a working python GUI that displays the camera and desktop feed and checks for QR codes.
 Every new QR code is being logged in a log-field that can be exported or cleared.
 - The QR Code is being translated into human readable Cardano transaction / signing information.
 
