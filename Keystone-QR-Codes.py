@@ -14,6 +14,8 @@ from typing import Dict, Any, List, Optional, Tuple
 import cbor2
 from pycardano import Address, PaymentVerificationKey
 import hashlib
+import json
+import binascii
 
 sys.path.insert(0, './py_protocol')
 from ur.ur_decoder import URDecoder
@@ -394,30 +396,150 @@ class ModernQRScanner:
             elif ur.type == 'cardano-sign-data-request':
                 return self.format_sign_data_details(decoded_data['data'])
             elif ur.type == 'cardano-sign-data-signature':
+                return self.format_sign_data_signature_details(decoded_data['data'])
+            elif ur.type == 'cardano-signature':
                 return self.format_signature_details(decoded_data['data'])
             else:
-                return f"Unsupported Cardano request type: {ur.type}"
+                return f"Unsupported Cardano request type: {ur.type}\n\nRaw data: {decoded_data}"
         except Exception as e:
             logging.error(f"Error decoding QR data: {str(e)}")
-            return f"Error decoding QR data: {str(e)}"
+            return f"Error decoding QR data: {str(e)}\n\nRaw QR data: {qr_data}"
         
-    def format_signature_details(self, data: Dict[int, Any]) -> str:
+    def format_sign_data_signature_details(self, data: Dict[int, Any]) -> str:
         result = []
+        result.append(f"Type: Cardano Sign Data Signature")
         result.append(f"Request ID: {data.get(1, 'N/A')}")
         
         signature = data.get(2, b'')
-        result.append(f"\nSignature: {signature.hex()}")
+        result.append(f"Signature: {signature.hex()}")
         
-        key_path = data.get(3, b'')
-        result.append(f"\nPublic Key: {key_path.hex()}")
+        public_key = data.get(3, b'')
+        result.append(f"Public Key: {public_key.hex()}")
         
         witness = data.get(4, b'')
         if witness:
-            result.append(f"\nWitness: {witness.hex()}")
+            result.append(f"Witness: {witness.hex()}")
         else:
-            result.append("\nWitness: None")
+            result.append("Witness: None")
+        
+        # Add any additional fields that might be present
+        for key, value in data.items():
+            if key not in {1, 2, 3, 4}:
+                result.append(f"Additional Field ({key}): {value}")
         
         return "\n".join(result)
+
+    def format_signature_details(self, data: Dict[int, Any]) -> str:
+        result = []
+        result.append(f"Type: Cardano Signature")
+        result.append(f"Request ID: {data.get(1, 'N/A')}")
+
+        signature = data.get(2, b'')
+        result.append(f"Signature (hex): {signature.hex()}")
+
+        key_path = data.get(3, b'')
+        if isinstance(key_path, bytes):
+            result.append(f"Key Path: {key_path.hex()}")
+        elif isinstance(key_path, list):
+            result.append(f"Key Path: {'/'.join(map(str, key_path))}")
+        else:
+            result.append(f"Key Path: {key_path}")
+
+        witness = data.get(4, b'')
+        if witness:
+            result.append(f"Witness: {witness.hex()}")
+        else:
+            result.append("Witness: None")
+
+        # Attempt to decode the signature
+        try:
+            decoded_signature = cbor2.loads(signature)
+            result.append("\nDecoded Signature:")
+            result.append(self.format_decoded_signature(decoded_signature))
+        except Exception as e:
+            result.append(f"Failed to decode signature: {e}")
+
+        # Add any additional fields that might be present
+        for key, value in data.items():
+            if key not in {1, 2, 3, 4}:
+                result.append(f"Additional Field ({key}): {self.format_value(value)}")
+
+        return "\n".join(result)
+
+    def format_decoded_signature(self, decoded_signature: Any, indent: str = "  ") -> str:
+        if isinstance(decoded_signature, dict):
+            return self.format_dict(decoded_signature, indent)
+        elif isinstance(decoded_signature, list):
+            return self.format_list(decoded_signature, indent)
+        elif isinstance(decoded_signature, bytes):
+            return f"{indent}Bytes: {decoded_signature.hex()}"
+        else:
+            return f"{indent}{decoded_signature}"
+
+    def format_dict(self, d: Dict[Any, Any], indent: str = "  ") -> str:
+        result = []
+        for key, value in d.items():
+            if key == 0:
+                result.append(f"{indent}Signature Components:")
+            else:
+                result.append(f"{indent}Field {key}:")
+            result.append(self.format_decoded_signature(value, indent + "  "))
+        return "\n".join(result)
+
+    def format_list(self, l: List[Any], indent: str = "  ") -> str:
+        result = []
+        for i, item in enumerate(l):
+            if isinstance(item, list) and len(item) == 2 and all(isinstance(x, bytes) for x in item):
+                result.append(f"{indent}Component {i+1}:")
+                result.append(f"{indent}  Public Key: {item[0].hex()}")
+                result.append(f"{indent}  Signature: {item[1].hex()}")
+            else:
+                result.append(f"{indent}Item {i+1}:")
+                result.append(self.format_decoded_signature(item, indent + "  "))
+        return "\n".join(result)
+
+    def format_value(self, value: Any) -> str:
+        if isinstance(value, bytes):
+            return f"Bytes: {value.hex()}"
+        elif isinstance(value, (list, dict)):
+            return "\n" + self.format_decoded_signature(value)
+        else:
+            return str(value)
+
+    def decode_cardano_request(self, ur_content: Any) -> Dict[str, Any]:
+        decoded_data = {'type': ur_content.type, 'data': cbor2.loads(ur_content.cbor)}
+        
+        # Add more detailed decoding based on the type
+        if ur_content.type == 'cardano-signature':
+            decoded_data['detailed'] = self.decode_cardano_signature(decoded_data['data'])
+        elif ur_content.type == 'cardano-sign-data-signature':
+            decoded_data['detailed'] = self.decode_cardano_sign_data_signature(decoded_data['data'])
+        
+        return decoded_data
+
+    def decode_cardano_signature(self, data: Dict[int, Any]) -> Dict[str, Any]:
+        return {
+            'request_id': data.get(1, 'N/A'),
+            'signature': data.get(2, b'').hex(),
+            'key_path': self.decode_key_path(data.get(3, b'')),
+            'witness': data.get(4, b'').hex() if data.get(4) else None
+        }
+
+    def decode_cardano_sign_data_signature(self, data: Dict[int, Any]) -> Dict[str, Any]:
+        return {
+            'request_id': data.get(1, 'N/A'),
+            'signature': data.get(2, b'').hex(),
+            'public_key': data.get(3, b'').hex(),
+            'witness': data.get(4, b'').hex() if data.get(4) else None
+        }
+
+    def decode_key_path(self, key_path: Any) -> str:
+        if isinstance(key_path, bytes):
+            return key_path.hex()
+        elif isinstance(key_path, list):
+            return '/'.join(map(str, key_path))
+        else:
+            return str(key_path)
 
     def format_transaction_details(self, data: Dict[int, Any]) -> str:
         result = []
