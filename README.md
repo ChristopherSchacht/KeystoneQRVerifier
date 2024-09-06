@@ -36,16 +36,17 @@ pip3 install opencv-python pyzbar Pillow cbor2 pycardano
 ```
 "To run this the following pre-requisites must be fulfilled:
 
-Google Protobuf compiler.
+1. Google Protobuf compiler.
 
-On Ubuntu this can be installed by doing:
+- On Ubuntu this can be installed by doing:
 sudo apt install protobuf-compiler
-On macOS this can be installed by doing:
+- n macOS this can be installed by doing:
 brew install protobuf
-Google Python API client for protobufs. Assuming python3, this can be installed by doing:
+
+2. Google Python API client for protobufs. Assuming python3, this can be installed by doing:
 pip3 install --upgrade google-api-python-client
 
-Run (and install if necessary) make to build the python modules needed for Google proto3 support."
+3. Run (and install if necessary) make to build the python modules needed for Google proto3 support."
 ```
 
 ## Attribution:
