@@ -9,23 +9,14 @@ import queue
 import logging
 import numpy as np
 import sys
-import gzip
 import os
+from typing import Dict, Any, List, Optional, Tuple
+import cbor2
+from pycardano import Address, PaymentVerificationKey
+import hashlib
 
-# Add the path to the KeystoneQRVerifier directory
-keystone_path = os.path.expanduser('~/Downloads/Python - Test-Umgebung/KeystoneQRVerifier')
-sys.path.insert(0, keystone_path)
-sys.path.insert(0, os.path.join(keystone_path, 'py_protocol'))
-
-# Now try to import the required modules
-try:
-    from ur.ur_decoder import URDecoder
-    from ur.cbor_lite import CBORDecoder
-    from py_protocol import base_pb2
-    DECODING_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"Could not import decoding modules: {e}")
-    DECODING_AVAILABLE = False
+sys.path.insert(0, './py_protocol')
+from ur.ur_decoder import URDecoder
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -33,7 +24,7 @@ class ModernQRScanner:
     def __init__(self, window, window_title):
         self.window = window
         self.window.title(window_title)
-        self.window.geometry("1800x1170")  # Adjusted window size
+        self.window.geometry("1800x1170")
         self.window.configure(bg='#2C3E50')
         
         self.center_window()
@@ -56,6 +47,9 @@ class ModernQRScanner:
         self.log_decoded_monitor = []
         self.frame_queue_webcam = queue.Queue(maxsize=1)
         self.frame_queue_monitor = queue.Queue(maxsize=1)
+        
+        self.ur_decoder_webcam = URDecoder()
+        self.ur_decoder_monitor = URDecoder()
         
         self.create_widgets()
         self.create_layout()
@@ -84,13 +78,11 @@ class ModernQRScanner:
             self.style.configure('Header.TLabel', font=('Helvetica', 20, 'bold'), background='#2C3E50', foreground='#ECF0F1')
             self.style.configure('TFrame', background='#2C3E50')
             
-            # Configure button colors
             self.style.map('TButton',
                 background=[('active', '#34495E'), ('!disabled', '#3498DB')],
                 foreground=[('!disabled', 'white')]
             )
             
-            # Configure canvas style
             self.style.configure('Canvas.TFrame', background='#34495E')
             
             logging.info("Styles configured successfully")
@@ -254,7 +246,7 @@ class ModernQRScanner:
                 self.vid = cv2.VideoCapture(0)
                 if not self.vid.isOpened():
                     raise Exception("Unable to open camera")
-                self.optimize_camera_settings()  # Add this line
+                self.optimize_camera_settings()
                 logging.info("Camera opened successfully")
             except Exception as e:
                 logging.error(f"Error opening camera: {str(e)}")
@@ -301,29 +293,18 @@ class ModernQRScanner:
                     logging.warning("Failed to grab frame from webcam")
                     continue
                 
-                # Convert to grayscale for faster processing
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-                # Adjust the resolution for QR code detection
                 height, width = gray.shape
                 min_side = min(height, width)
                 scale_factor = 800 / min_side
                 small_gray = cv2.resize(gray, (0, 0), fx=scale_factor, fy=scale_factor)
-
-                # Increase contrast
                 small_gray = cv2.equalizeHist(small_gray)
-
-                # Apply Gaussian blur to reduce noise
                 small_gray = cv2.GaussianBlur(small_gray, (5, 5), 0)
-
-                # Try different thresholding methods
                 _, binary = cv2.threshold(small_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                 
-                # Detect QR codes
                 barcodes = pyzbar.decode(binary)
 
                 if not barcodes:
-                    # If no QR codes found, try adaptive thresholding
                     adaptive_thresh = cv2.adaptiveThreshold(small_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
                     barcodes = pyzbar.decode(adaptive_thresh)
 
@@ -341,7 +322,6 @@ class ModernQRScanner:
                         self.last_code_webcam = barcode_data
                         self.last_time_webcam = current_time
 
-                    # Draw bounding box (scale back to original size)
                     (x, y, w, h) = barcode.rect
                     cv2.rectangle(frame, 
                                   (int(x/scale_factor), int(y/scale_factor)), 
@@ -355,7 +335,7 @@ class ModernQRScanner:
                 logging.error(f"Error in scan_qr_webcam: {str(e)}")
                 self.window.after(0, self.show_error, "Webcam Scanning Error", str(e))
             
-            time.sleep(0.01)  # Small delay to prevent excessive CPU usage
+            time.sleep(0.01)
 
     def scan_qr_monitor(self):
         logging.info("Monitor QR scanning thread started")
@@ -363,10 +343,7 @@ class ModernQRScanner:
             try:
                 screenshot = ImageGrab.grab()
                 frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
-
-                # Use a smaller resolution for faster processing
                 small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-
                 barcodes = pyzbar.decode(small_frame)
 
                 for barcode in barcodes:
@@ -383,7 +360,6 @@ class ModernQRScanner:
                         self.last_code_monitor = barcode_data
                         self.last_time_monitor = current_time
 
-                    # Draw bounding box (scale back to original size)
                     (x, y, w, h) = barcode.rect
                     cv2.rectangle(frame, (x*2, y*2), (x*2 + w*2, y*2 + h*2), (0, 255, 0), 2)
 
@@ -393,68 +369,168 @@ class ModernQRScanner:
             except Exception as e:
                 logging.error(f"Error in scan_qr_monitor: {str(e)}")
                 self.window.after(0, self.show_error, "Monitor Scanning Error", str(e))
-            time.sleep(0.005)  # Reduced delay to increase scanning frequency
+            time.sleep(0.005)
 
-    def process_frame(self, frame, frame_queue, last_code, last_time, log, source):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        barcodes = pyzbar.decode(gray)
-        
-        for barcode in barcodes:
-            barcode_data = barcode.data.decode("utf-8")
-            current_time = time.time()
-            
-            if barcode_data != last_code and (current_time - last_time) >= 0.1:
-                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                log_entry = f"{timestamp}: {barcode_data}"
-                log.append(log_entry)
-                self.window.after(0, self.update_log, log_entry, source)
-                logging.info(f"New QR code scanned from {source}: {barcode_data}")
-                
-                if source == "webcam":
-                    self.last_code_webcam = barcode_data
-                    self.last_time_webcam = current_time
-                else:
-                    self.last_code_monitor = barcode_data
-                    self.last_time_monitor = current_time
-            
-            # Draw bounding box
-            (x, y, w, h) = barcode.rect
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        
-        if frame_queue.full():
-            frame_queue.get_nowait()
-        frame_queue.put(frame)
+    def decode_ur(self, content: List[str], source: str) -> Optional[Any]:
+        decoder = self.ur_decoder_webcam if source == "webcam" else self.ur_decoder_monitor
+        for part in content:
+            decoder.receive_part(part.lower().strip())
+        return decoder.result_message() if decoder.is_success() else None
 
-    def decode_qr_data(self, qr_data):
-        if not DECODING_AVAILABLE:
-            return "Decoding modules not available. Please check your installation."
+    def decode_cardano_request(self, ur_content: Any) -> Dict[str, Any]:
+        return {'type': ur_content.type, 'data': cbor2.loads(ur_content.cbor)}
 
+    def decode_qr_data(self, qr_data: str, source: str) -> str:
         try:
-            decoder = URDecoder()
-            decoder.receive_part(qr_data.lower().strip())
-            if decoder.is_complete():
-                ur = decoder.result_message()
-                (payload, _) = CBORDecoder(ur.cbor).decodeBytes()
-                unzipped_payload = gzip.decompress(bytearray(payload))
-                message = base_pb2.Base()
-                message.ParseFromString(unzipped_payload)
-                return str(message)
+            ur = self.decode_ur([qr_data], source)
+            if ur is None:
+                percent_complete = (self.ur_decoder_webcam if source == "webcam" else self.ur_decoder_monitor).estimated_percent_complete() * 100
+                return f"Incomplete QR data ({percent_complete:.2f}% complete)"
+
+            decoded_data = self.decode_cardano_request(ur)
+            
+            if ur.type == 'cardano-sign-request':
+                return self.format_transaction_details(decoded_data['data'])
+            elif ur.type == 'cardano-sign-data-request':
+                return self.format_sign_data_details(decoded_data['data'])
             else:
-                return "Incomplete QR code data"
+                return f"Unsupported Cardano request type: {ur.type}"
         except Exception as e:
+            logging.error(f"Error decoding QR data: {str(e)}")
             return f"Error decoding QR data: {str(e)}"
 
+    def format_transaction_details(self, data: Dict[int, Any]) -> str:
+        result = []
+        result.append(f"Request ID: {data.get(1, 'N/A')}")
+        sign_data = data.get(2, b'')
+        
+        result.append("\nRaw Transaction Data:")
+        result.append(sign_data.hex())
+        
+        try:
+            decoded_sign_data = cbor2.loads(sign_data)
+            result.append("\nDecoded Transaction Structure:")
+            result.append(str(decoded_sign_data))
+            
+            tx_body = decoded_sign_data[0]
+            result.append("\nTransaction Body Details:")
+            
+            # Inputs
+            result.append("\nInputs:")
+            for i, input_data in enumerate(tx_body.get(0, []), 1):
+                result.append(f"  Input {i}:")
+                result.append(f"    - TX Hash: {input_data[0].hex()}")
+                result.append(f"    - Index: {input_data[1]}")
+            
+            # Outputs
+            result.append("\nOutputs:")
+            for i, output_data in enumerate(tx_body.get(1, []), 1):
+                result.append(f"  Output {i}:")
+                address, amount = output_data
+                result.append(f"    - Address: {self.decode_address_data(address)}")
+                result.append(f"    - Amount: {amount} lovelace ({amount/1000000:.6f} ADA)")
+            
+            # Fee
+            fee = tx_body.get(2, 0)
+            result.append(f"\nFee: {fee} lovelace ({fee/1000000:.6f} ADA)")
+            
+            # TTL
+            result.append(f"TTL: {tx_body.get(3, 'N/A')}")
+            
+            # Additional fields
+            for key, value in tx_body.items():
+                if key not in {0, 1, 2, 3}:
+                    result.append(f"Additional field ({key}): {value}")
+            
+            # Calculate totals
+            total_output = sum(output[1] for output in tx_body.get(1, []))
+            total_input = total_output + fee
+            result.append(f"\nTotal Input: {total_input} lovelace ({total_input/1000000:.6f} ADA)")
+            result.append(f"Total Output: {total_output} lovelace ({total_output/1000000:.6f} ADA)")
+        
+        except Exception as e:
+            result.append(f"Failed to decode transaction body: {e}")
+        
+        result.append(f"\nOrigin: {data.get(5, 'N/A')}")
+        return "\n".join(result)
+
+    def format_sign_data_details(self, data: Dict[int, Any]) -> str:
+        result = []
+        result.append(f"Request ID: {data.get(1, 'N/A')}")
+        
+        payload = data.get(2, b'')
+        signature_type, address_data, extracted_payload, message_hash = self.extract_payload_and_hash(payload)
+        
+        result.append(f"\nSignature Type: {signature_type}")
+        result.append(f"\nAddress: {self.decode_address_data(address_data)}")
+        result.append(f"\nPayload: {extracted_payload}")
+        result.append(f"\nMessage Hash: {message_hash}")
+        result.append(f"\nDerivation Path: {self.parse_derivation_path(data.get(3, 'N/A'))}")
+        result.append(f"\nOrigin: {data.get(4, 'N/A')}")
+        
+        public_key = data.get(6, b'')
+        result.append(f"\nPublic Key: {self.format_public_key(public_key)}")
+        
+        if isinstance(public_key, bytes):
+            try:
+                vk = PaymentVerificationKey.from_primitive(public_key)
+                vk_dict = vk.to_json()
+                result.append("\nDecoded Verification Key:")
+                for key, value in vk_dict.items():
+                    result.append(f"  {key.capitalize()}: {value}")
+            except Exception as e:
+                result.append(f"Failed to decode public key: {e}")
+        
+        return "\n".join(result)
+
+    def decode_address_data(self, address_data: Any) -> str:
+        try:
+            decoded = cbor2.loads(address_data)
+            if isinstance(decoded, dict) and 'address' in decoded:
+                return Address.from_primitive(decoded['address']).encode()
+            elif isinstance(address_data, bytes):
+                return Address.from_primitive(address_data).encode()
+        except Exception as e:
+            logging.error(f"Failed to decode address data: {e}")
+        return str(address_data)
+
+    def extract_payload_and_hash(self, payload: bytes) -> Tuple[Any, Any, str, str]:
+        try:
+            data = cbor2.loads(payload)
+            if isinstance(data, list) and len(data) == 4:
+                signature_type, address_data, _, payload_content = data
+                extracted_payload = payload_content.decode('utf-8', errors='replace') if isinstance(payload_content, bytes) else str(payload_content)
+                message_hash = hashlib.sha256(payload).hexdigest()
+                return signature_type, address_data, extracted_payload, message_hash
+        except Exception as e:
+            logging.error(f"Debug - Exception in extract_payload_and_hash: {e}")
+        return None, None, None, None
+
+    def parse_derivation_path(self, path_data: Any) -> str:
+        if isinstance(path_data, cbor2.CBORTag) and path_data.tag == 304:
+            path_dict = path_data.value
+            if isinstance(path_dict, dict) and 1 in path_dict:
+                path = path_dict[1]
+                return '/'.join(f"{p}'" if hardened else str(p) for p, hardened in zip(path[::2], path[1::2]))
+        elif isinstance(path_data, dict) and 1 in path_data:
+            path = path_data[1]
+            return '/'.join(f"{p}'" if hardened else str(p) for p, hardened in zip(path[::2], path[1::2]))
+        return str(path_data)
+
+    def format_public_key(self, key: Any) -> str:
+        return key.hex() if isinstance(key, bytes) else str(key)
+    
     def update(self):
         self.update_canvas(self.frame_queue_webcam, self.webcam_canvas)
         self.update_canvas(self.frame_queue_monitor, self.monitor_canvas)
         self.window.after(self.delay, self.update)
+
 
     def update_canvas(self, frame_queue, canvas):
         try:
             frame = frame_queue.get_nowait()
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            # Resize frame to fit canvas while maintaining aspect ratio
             canvas_ratio = canvas.winfo_width() / canvas.winfo_height()
             frame_ratio = frame.shape[1] / frame.shape[0]
             
@@ -469,13 +545,12 @@ class ModernQRScanner:
             
             photo = ImageTk.PhotoImage(image=Image.fromarray(frame))
             
-            # Center the image on the canvas
             x_center = (canvas.winfo_width() - new_width) // 2
             y_center = (canvas.winfo_height() - new_height) // 2
             
             canvas.delete("all")
             canvas.create_image(x_center, y_center, image=photo, anchor=tk.NW)
-            canvas.image = photo  # Keep a reference to prevent garbage collection
+            canvas.image = photo
         except queue.Empty:
             pass
         except Exception as e:
@@ -490,7 +565,7 @@ class ModernQRScanner:
                 log_text = self.log_text_monitor
                 decoded_log_text = self.log_text_decoded_monitor
             else:
-                return  # Invalid source
+                return
             
             log_text.config(state=tk.NORMAL)
             log_text.insert(tk.END, log_entry + "\n")
@@ -498,9 +573,8 @@ class ModernQRScanner:
             log_text.config(state=tk.DISABLED)
             logging.debug(f"Log updated for {source}: {log_entry}")
 
-            # Decode the QR data
             qr_data = log_entry.split(": ", 1)[1]
-            decoded_data = self.decode_qr_data(qr_data)
+            decoded_data = self.decode_qr_data(qr_data, source)
             
             decoded_log_text.config(state=tk.NORMAL)
             decoded_log_text.insert(tk.END, f"Decoded data for {source}:\n{decoded_data}\n\n")
@@ -535,11 +609,12 @@ class ModernQRScanner:
             log_text.delete(1.0, tk.END)
             log_text.config(state=tk.DISABLED)
             
-            # Clear the corresponding decoded log
             if log_text == self.log_text_webcam:
                 decoded_log_text = self.log_text_decoded_webcam
+                self.ur_decoder_webcam = URDecoder()
             elif log_text == self.log_text_monitor:
                 decoded_log_text = self.log_text_decoded_monitor
+                self.ur_decoder_monitor = URDecoder()
             else:
                 return
 
